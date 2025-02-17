@@ -1,6 +1,6 @@
 import unittest
 import json
-from src.main import app
+from main import app
 
 class TestChatService(unittest.TestCase):
     def setUp(self):
