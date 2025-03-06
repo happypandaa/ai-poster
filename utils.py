@@ -1,16 +1,114 @@
+import requests
 
-def build_prompt(product_category, drawing_category, width, height):
-    """
-    构建对话请求的提示信息
-    :param product_category: 产品类别
-    :param drawing_category: 绘制类别
-    :param width: 尺寸宽度
-    :param height: 尺寸高度
-    :return: 拼接好的提示信息字符串
-    """
-    design_tip = f"这个布局用用户图片[mainpic]作为底图，上面最好包含3-4个文字元素，为文字设置背景和边框，元素之间的关系要合理，元素的颜色要搭配，元素的大小要合适，元素的位置要合理。足够吸引人，帮我返回的格式应该是handleElement的参数。"
 
-    return f"这个的产品类别: {product_category}, 我们要绘制: {drawing_category.value}, 尺寸: {width}x{height}，{design_tip}"
+def build_prompt(design_style, template_purpose, width, height):
+    """
+    构建设计规范文档，用于指导多位设计师实施设计
+    :param design_style: 设计风格
+    :param template_purpose: 模板用途
+    :param width: 尺寸宽度(像素)
+    :param height: 尺寸高度(像素)
+    :return: 拼接好的设计规范文档
+    """
+    essential_parameters = (
+        f"每个元素必须明确定义以下核心参数：\n"
+        f"1. 元素类别：明确标注是主体图片/文字/装饰图片/背景图片\n"
+        f"2. 位置参数：精确的X,Y坐标(单位px)，以左上角为基准点\n"
+        f"3. 尺寸参数：宽度和高度(单位px)，或半径(圆形)，或具体路径点(复杂形状)\n"
+        f"4. 层级顺序：z-index值或前后层级描述，确保元素间正确的重叠关系\n"
+        f"5. 颜色值：所有颜色必须使用十六进制码(如#FF5733)，必要时包含透明度\n"
+    )
+    
+    element_specifications = (
+        f"设计需包含以下类型元素，每种元素都需定义上述核心参数外，还需提供专属参数：\n\n"
+        
+        f"1. 主体用户图片(mainpic)：\n"
+        f"   - 裁剪方式(方形/圆形/自定义形状)\n"
+        f"   - 边框(粗细、颜色、样式)、圆角值\n"
+        f"   - 阴影/滤镜效果(如有)\n\n"
+        
+        f"2. 文字元素：\n"
+        f"   - 文字内容示例\n"
+        f"   - 字体系列、大小(px)、字重、样式\n"
+        f"   - 对齐方式、行高、字间距\n"
+        f"   - 文字装饰(下划线/阴影/背景等)\n\n"
+        
+        f"3. 装饰图片元素(需特别详细描述)：\n"
+        f"   - 图片主题与内容的详细描述(具体到场景、物品、人物等)\n"
+        f"   - 图片风格(写实/卡通/插画/线条等)的明确要求\n"
+        f"   - 图片色调与配色(亮度、饱和度、色相倾向等)\n"
+        f"   - 图片质感(平面/立体/材质表现等)\n"
+        f"   - 图片情绪表达与设计意图\n"
+        f"   - 与整体设计的风格匹配说明\n"
+        f"   - 裁剪/蒙版具体效果\n"
+        f"   - 边框要求(有无、粗细、颜色、样式)\n"
+        f"   - 圆角要求(有无、大小)\n"
+        f"   - 阴影效果(有无、偏移、模糊度、颜色)\n"
+        f"   - 透明度/滤镜具体参数\n"
+        f"   - 旋转角度(如适用)\n"
+        f"   - 在整体设计中的作用与布局关系\n\n"
+        
+        f"4. 背景图片(需特别详细描述)：\n"
+        f"   - 背景图片主题与内容的详细描述\n"
+        f"   - 背景风格(抽象/具象/纹理/图案等)\n"
+        f"   - 色调要求(明确的色调范围和主色调)\n"
+        f"   - 饱和度与明度的明确要求\n"
+        f"   - 背景复杂度(简洁/适中/复杂)及视觉重量\n"
+        f"   - 与前景元素的对比关系\n"
+        f"   - 平铺/拉伸/居中等显示方式\n"
+        f"   - 图片渐变/虚化/蒙版效果的具体参数\n"
+        f"   - 纹理细节要求(如有)\n"
+        f"   - 背景图片如何衬托主题的说明\n\n"
+        
+        f"5. 纯色/渐变背景(如适用)：\n"
+        f"   - 纯色：精确的十六进制色值\n"
+        f"   - 渐变：类型(线性/径向)、方向、各色标位置及色值\n"
+        f"   - 与整体设计风格的关系说明\n"
+    )
+    
+    design_rules = (
+        f"设计规则要点：\n"
+        f"1. 提供明确的设计风格与主配色方案\n"
+        f"2. 所有元素必须有精确的像素级定位与尺寸\n"
+        f"3. 文字在图片上方时，必须确保可读性\n"
+        f"4. 装饰图片与背景图片必须详尽描述，确保设计师能准确把握风格和要求\n"
+        f"5. 图片的色调、风格、质感描述必须具体而非笼统\n"
+        f"6. 元素间距、层级关系必须明确定义\n"
+        f"7. 整体视觉平衡与引导动线须清晰描述\n"
+        f"8. 重要的是各种元素数量不拘泥，可以没有某种元素，也可以有多个某种元素。\n"
+    )
+    
+    output_format = (
+        f"输出格式：\n"
+        f"1. 设计风格与配色：\n"
+        f"2. 元素列表：按从背景到前景顺序排列，包含：\n"
+        f"   - 元素类别\n"
+        f"   - 核心参数(位置、尺寸、层级、颜色)\n"
+        f"   - 元素专属详细参数\n"
+        f"   - 设计意图与整体关系说明\n"
+    )
+    
+    return (f"设计规范文档\n\n"
+            f"项目信息:\n"
+            f"- 设计风格: {design_style}\n"
+            f"- 用途: {template_purpose}\n"
+            f"- 画布尺寸: {width}x{height}px\n\n"
+            f"{essential_parameters}\n\n"
+            f"{element_specifications}\n\n"
+            f"{design_rules}\n\n"
+            f"{output_format}\n\n"
+            f"请根据以上规范提供完整元素清单，确保特别详细描述所有图片类元素(背景图片和装饰图片)的具体风格、色调、内容要求，使设计师能准确理解并实施。")
+def build_fc_prompt(message):
+    fc_prompt = (f"参照下面这些描述和设计元素，生成代码，按照格式生成调用handleElement的参数，"\
+                 f"注意是生成代码，保证可用。要注意元素之间的位置尺寸。"\
+                 f"注意top,left 是元素左上角距离画布左上角距离，不要让元素超出画布"\
+                 f"注意z-index,注意层次,用户图片放在最小，点缀元素大。"\
+                 f"文字背景则在文字元素设置，无需单独元素，"\
+                 f"可以适当调整他们的关系，{message}")
+    return [
+        {"role": "system", "content": "你是一个平面设计师，帮我规划设计布局。按照格式生成调用handleElement的参数，注意是生成代码，保证可用。"},
+        {"role": "user", "content": fc_prompt}
+    ]
 
 def build_messages(prompt):
     """
@@ -23,133 +121,16 @@ def build_messages(prompt):
         {"role": "user", "content": prompt}
     ]
 
-def get_req(messages,is_stream=False):
-    req = {
-        "model": "ep-20250214164426-t8s6k",
-        "messages": messages,
-        "stream": is_stream,
-        "temperature": 0.8,
-        "tools": [
-            {
-                "type": "function",
-                "function": {
-                    "name": "handleElement",
-                    "description": "处理Element类型的数据，可对Element对象进行创建、修改等操作",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "enum": ["text", "image", "rectangle"],
-                                "description": "元素的类型，可选值为 'text'、'image' 或 'rectangle'"
-                            },
-                            "position": {
-                                "type": "object",
-                                "properties": {
-                                    "x": {
-                                        "type": "number",
-                                        "description": "元素在 x 轴的位置"
-                                    },
-                                    "y": {
-                                        "type": "number",
-                                        "description": "元素在 y 轴的位置"
-                                    }
-                                },
-                                "required": ["x", "y"],
-                                "description": "元素的位置信息，包含 x 和 y 坐标"
-                            },
-                            "backgroundColor": {
-                                "type": "string",
-                                "description": "元素的背景颜色"
-                            },
-                            "opacity": {
-                                "type": "number",
-                                "description": "元素的不透明度"
-                            },
-                            "border": {
-                                "type": "object",
-                                "properties": {
-                                    "width": {
-                                        "type": "number",
-                                        "description": "边框的宽度"
-                                    },
-                                    "color": {
-                                        "type": "string",
-                                        "description": "边框的颜色"
-                                    },
-                                    "radius": {
-                                        "type": "number",
-                                        "description": "边框的圆角半径"
-                                    }
-                                },
-                                "required": ["width", "color", "radius"],
-                                "description": "元素的边框信息，包含宽度、颜色和圆角半径"
-                            },
-                            "size": {
-                                "type": "object",
-                                "properties": {
-                                    "width": {
-                                        "type": "number",
-                                        "description": "元素的宽度"
-                                    },
-                                    "height": {
-                                        "type": "number",
-                                        "description": "元素的高度"
-                                    }
-                                },
-                                "required": ["width", "height"],
-                                "description": "元素的尺寸信息，包含宽度和高度"
-                            },
-                            "content": {
-                                "type": "string",
-                                "description": "文字元素特有的内容信息"
-                            },
-                            "font": {
-                                "type": "object",
-                                "properties": {
-                                    "family": {
-                                        "type": "string",
-                                        "description": "字体家族"
-                                    },
-                                    "size": {
-                                        "type": "number",
-                                        "description": "字体大小"
-                                    },
-                                    "color": {
-                                        "type": "string",
-                                        "description": "字体颜色"
-                                    },
-                                    "bold": {
-                                        "type": "boolean",
-                                        "description": "是否加粗"
-                                    },
-                                    "italic": {
-                                        "type": "boolean",
-                                        "description": "是否倾斜"
-                                    },
-                                    "underline": {
-                                        "type": "boolean",
-                                        "description": "是否有下划线"
-                                    }
-                                },
-                                "required": ["family", "size", "color"],
-                                "description": "文字元素特有的字体信息"
-                            },
-                            "url": {
-                                "type": "string",
-                                "description": "图片元素特有的图片链接"
-                            },
-                            "display": {
-                                "type": "string",
-                                "enum": ["cover", "contain", "center"],
-                                "description": "图片元素特有的显示方式，可选值为 'cover'、'contain' 或 'center'"
-                            }
-                        },
-                        "required": [ "type", "position", "backgroundColor", "opacity", "size"],
-                        "description": "Element 对象的参数结构"
-                    }
-                }
-            }
-        ]
-    }
-    return req
+    
+
+# 线程函数：下载并保存图片
+def download_image(url, file_path):
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        with open(file_path, 'wb') as f:
+            f.write(response.content)
+        return True
+    except Exception as e:
+        print(f"下载图片失败: {e}")
+        return False

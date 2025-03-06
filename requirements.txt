@@ -1,3 +1,4 @@
 outlines
 flask
 configparser
+dashscope
