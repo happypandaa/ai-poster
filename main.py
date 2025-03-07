@@ -1,10 +1,11 @@
 import enum
+import json
 import os
 import requests
 from http import HTTPStatus
 from urllib.parse import urlparse, unquote
 from pathlib import PurePosixPath
-from flask import Flask, request, Response
+from flask import Flask, request, Response, send_from_directory
 from volcenginesdkarkruntime._exceptions import ArkAPIError
 import threading
 import uuid
@@ -12,8 +13,8 @@ import uuid
 from model_req import get_completions, get_ds_completions, get_ds_fc_completions, get_fc_completions
 from utils import build_fc_prompt, build_messages, build_prompt, download_image
 from dashscope import ImageSynthesis
-from aliyunsdkcore.client import AcsClient
-from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
+# from aliyunsdkcore.client import AcsClient
+# from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
 
 app = Flask(__name__)
 
@@ -106,7 +107,7 @@ def text_to_image():
         # 如果 size 参数未提供，可以设置默认值
         size = data.get('size', '1024*1024')
     except Exception as e:
-        return Response(f'{{"error": "参数解析异常: {str(e)}"}}', status=400, mimetype='application/json')
+        return Response(json.dumps({"error": f"参数解析异常: {str(e)}"}), status=400, mimetype='application/json')
     
     # 2. 调用图像生成 API
     try:
@@ -119,9 +120,14 @@ def text_to_image():
         )
         
         if rsp.status_code != HTTPStatus.OK:
+            error_message = rsp.message if hasattr(rsp, "message") else "未知错误"
             return Response(
-                f'{{"error": "API请求失败", "status": {rsp.status_code}, "message": "{rsp.message if hasattr(rsp, "message") else "未知错误"}"}}', 
-                status=500, 
+                json.dumps({
+                    "error": "API请求失败", 
+                    "status": rsp.status_code, 
+                    "message": error_message
+                }),
+                status=500,
                 mimetype='application/json'
             )
         
@@ -158,13 +164,26 @@ def text_to_image():
         
         # 4. 返回成功响应
         return Response(
-            f'{{"success": true, "message": "图片生成成功", "images": {result_urls}}}',
+            json.dumps({
+                "success": True, 
+                "message": "图片生成成功", 
+                "images": result_urls
+            }),
             status=200,
             mimetype='application/json'
         )
-        
+    
     except Exception as e:
         print(f"生成图片异常: {e}")
-        return Response(f'{{"error": "生成图片异常", "message": "{str(e)}"}}', status=500, mimetype='application/json')
+        return Response(
+            json.dumps({"error": "生成图片异常", "message": str(e)}),
+            status=500,
+            mimetype='application/json'
+        )
+T2IS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 't2is')
+
+@app.route('/t2is/<path:filename>')
+def serve_t2is(filename):
+    return send_from_directory(T2IS_FOLDER, filename)
 if __name__ == '__main__':
     app.run(debug=True)
