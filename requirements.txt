@@ -2,3 +2,5 @@ outlines
 flask
 configparser
 dashscope
+openai
+volcengine-python-sdk[ark]
