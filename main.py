@@ -9,7 +9,7 @@ from flask import Flask, request, Response, send_from_directory
 from volcenginesdkarkruntime._exceptions import ArkAPIError
 import threading
 import uuid
-
+import time
 from model_req import get_completions, get_ds_completions, get_ds_fc_completions, get_fc_completions
 from utils import build_fc_prompt, build_messages, build_prompt, download_image
 from dashscope import ImageSynthesis
@@ -101,87 +101,101 @@ def text_to_image():
         if not data:
             return Response('{"error": "缺少JSON数据"}', status=400, mimetype='application/json')
 
-        # 检查必要参数
-        prompt = data.get('prompt')
-        if not prompt:
-            return Response('{"error": "缺少 prompt 参数"}', status=400, mimetype='application/json')
+        # 检查必要参数，这里假设接受一个 prompts 数组，每个元素是包含 prompt 和 size 的对象
+        prompts_with_size = data.get('prompts')
+        if not prompts_with_size or not isinstance(prompts_with_size, list):
+            return Response('{"error": "缺少 prompts 数组参数"}', status=400, mimetype='application/json')
 
-        # 如果 size 参数未提供，可以设置默认值
-        size = data.get('size', '1024*1024')
+        for item in prompts_with_size:
+            if 'prompt' not in item:
+                return Response('{"error": "prompts 数组中的元素缺少 prompt 参数"}', status=400, mimetype='application/json')
+
     except Exception as e:
         return Response(json.dumps({"error": f"参数解析异常: {str(e)}"}), status=400, mimetype='application/json')
 
-    # 2. 调用图像生成 API
-    try:
-        rsp = ImageSynthesis.call(
-            api_key=os.getenv("DASHSCOPE_API_KEY"),
-            model="wanx2.1-t2i-turbo",
-            prompt=prompt,
-            n=1,
-            size=size
-        )
+    all_result_urls = []
 
-        if rsp.status_code != HTTPStatus.OK:
-            error_message = rsp.message if hasattr(rsp, "message") else "未知错误"
+    # 2. 依次调用图像生成 API
+    for item in prompts_with_size:
+        prompt = item['prompt']
+        size = item.get('size', '1024*1024')
+        try:
+            rsp = ImageSynthesis.call(
+                api_key=os.getenv("DASHSCOPE_API_KEY"),
+                model="wanx2.1-t2i-turbo",
+                prompt=prompt,
+                n=1,
+                size=size
+            )
+
+            if rsp.status_code != HTTPStatus.OK:
+                error_message = rsp.message if hasattr(
+                    rsp, "message") else "未知错误"
+                return Response(
+                    json.dumps({
+                        "error": "API请求失败",
+                        "status": rsp.status_code,
+                        "message": error_message
+                    }),
+                    status=500,
+                    mimetype='application/json'
+                )
+
+            # 3. 处理响应
+            result_urls = []
+            download_threads = []
+
+            # 确保目录存在
+            os.makedirs('./t2is', exist_ok=True)
+
+            for result in rsp.output.results:
+                print('image result', result)
+                # 生成唯一文件名
+                file_name = f"{uuid.uuid4()}.jpg"
+                file_path = f"./t2is/{file_name}"
+
+                # 创建下载线程
+                thread = threading.Thread(
+                    target=download_image,
+                    args=(result.url, file_path)
+                )
+                thread.start()
+                download_threads.append(thread)
+
+                # 将文件路径添加到结果列表
+                result_urls.append({
+                    "original_url": result.url,
+                    "local_path": file_path,
+                    "file_name": file_name
+                })
+
+            # 等待所有下载线程完成
+            for thread in download_threads:
+                thread.join()
+
+            all_result_urls.extend(result_urls)
+
+            # 两次请求间隔一秒
+            time.sleep(1)
+
+        except Exception as e:
+            print(f"生成图片异常: {e}")
             return Response(
-                json.dumps({
-                    "error": "API请求失败",
-                    "status": rsp.status_code,
-                    "message": error_message
-                }),
+                json.dumps({"error": "生成图片异常", "message": str(e)}),
                 status=500,
                 mimetype='application/json'
             )
 
-        # 3. 处理响应
-        result_urls = []
-        download_threads = []
-
-        # 确保目录存在
-        os.makedirs('./t2is', exist_ok=True)
-
-        for result in rsp.output.results:
-            # 生成唯一文件名
-            file_name = f"{uuid.uuid4()}.jpg"
-            file_path = f"./t2is/{file_name}"
-
-            # 创建下载线程
-            thread = threading.Thread(
-                target=download_image,
-                args=(result.url, file_path)
-            )
-            thread.start()
-            download_threads.append(thread)
-
-            # 将文件路径添加到结果列表
-            result_urls.append({
-                "original_url": result.url,
-                "local_path": file_path,
-                "file_name": file_name
-            })
-
-        # 关键修改: 等待所有下载线程完成
-        for thread in download_threads:
-            thread.join()
-
-        # 4. 返回成功响应
-        return Response(
-            json.dumps({
-                "success": True,
-                "message": "图片生成成功",
-                "images": result_urls
-            }),
-            status=200,
-            mimetype='application/json'
-        )
-
-    except Exception as e:
-        print(f"生成图片异常: {e}")
-        return Response(
-            json.dumps({"error": "生成图片异常", "message": str(e)}),
-            status=500,
-            mimetype='application/json'
-        )
+    # 4. 返回成功响应
+    return Response(
+        json.dumps({
+            "success": True,
+            "message": "图片生成成功",
+            "images": all_result_urls
+        }),
+        status=200,
+        mimetype='application/json'
+    )
 
 
 T2IS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 't2is')
